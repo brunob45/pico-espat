@@ -1,4 +1,4 @@
-// https://docs.espressif.com/projects/esp-at/en/release-v2.1.0.0_esp8266/AT_Command_Set/Wi-Fi_AT_Commands.html#cmd-JAP
+// https://docs.espressif.com/projects/esp-at/en/release-v2.1.0.0_esp8266/AT_Command_Set/
 
 #include <stdio.h>
 #include "pico/stdlib.h"
@@ -11,7 +11,7 @@ int main()
     gpio_set_function(4, GPIO_FUNC_UART);
     gpio_set_function(5, GPIO_FUNC_UART);
 
-    sleep_ms(5000);
+    sleep_ms(10000);
 
     uart_puts(uart1, "AT+MQTTUSERCFG=0,1,\"rp2040\",\"\",\"\",0,0,\"\"\r\n");
     sleep_ms(100);
@@ -21,6 +21,9 @@ int main()
     sleep_ms(100);
     uart_puts(uart1, "AT+MQTTPUB=0,\"home/nodes/sensor/rp2040/status\",\"online\",0,0\r\n");
     sleep_ms(100);
+    uart_puts(uart1, "AT+MQTTPUBRAW=0,\"homeassistant/sensor/rp2040/monitor/config\",75,0,0\r\n");
+    sleep_ms(100);
+    uart_puts(uart1, "{\"name\":\"rp2040\", \"~\":\"home/nodes/sensor/rp2040\", \"state_topic\":\"~/status\"}\r\n");
 
     while (true)
     {

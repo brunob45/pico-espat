@@ -15,5 +15,5 @@
 `AT+MQTTPUBRAW=0,"homeassistant/sensor/rp2040/monitor/config",57,0,0`
 
 ```json
-{"dev":{"manufacturer":"Invector Labs","model":"rp2040"}}
+{"name":"rp2040", "~":"home/nodes/sensor/rp2040", "state_topic":"~/status"}
 ```
