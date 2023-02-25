@@ -3,6 +3,76 @@
 #include <stdio.h>
 #include "pico/stdlib.h"
 
+int find_pattern(const char *pattern, const uint8_t *buffer)
+{
+    size_t i, j;
+
+    size_t pattern_size;
+    for (pattern_size = 0; pattern[pattern_size] != 0; pattern_size++)
+        ;
+
+    size_t buffer_size;
+    for (buffer_size = 0; buffer[buffer_size] != 0; buffer_size++)
+        ;
+
+    if (pattern_size > buffer_size)
+    {
+        return -1; // pattern is bigger than buffer, cannot find it
+    }
+
+    for (size_t i = 0; i < (buffer_size - pattern_size); i++)
+    {
+        bool match = true;
+        for (size_t j = 0; j < pattern_size; j++)
+        {
+            match &= (buffer[i] == pattern[j]);
+        }
+        if (match)
+        {
+            return i;
+        }
+    }
+    return -1;
+}
+
+bool mqtt_usercfg(uint8_t scheme, const char *client_id, uint32_t timeout)
+{
+    uart_puts(uart1, "AT+MQTTUSERCFG=0,");
+    if (scheme < 10)
+    {
+        uart_putc(uart1, '0' + scheme);
+        uart_putc(uart1, ',');
+    }
+    else
+    {
+        uart_puts(uart1, "10,");
+    }
+    uart_puts(uart1, client_id);
+    uart_puts(uart1, ",\"\",\"\",0,0,\"\"\r\n");
+
+    uint8_t buffer[255] = {
+        0,
+    }; // init with null character
+    uint8_t buffer_size = 0;
+    bool match = false;
+
+    absolute_time_t time_end = make_timeout_time_ms(timeout);
+    while (!match && get_absolute_time() <= time_end)
+    {
+        if (uart_is_readable(uart1))
+        {
+            buffer[buffer_size] = uart_getc(uart1);
+            ++buffer_size;
+            buffer[buffer_size] = 0; // put null character;
+            if (find_pattern("OK", buffer) >= 0)
+            {
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
 int main()
 {
     stdio_init_all();
