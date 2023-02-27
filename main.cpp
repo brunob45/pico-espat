@@ -49,61 +49,38 @@ int find_pattern(const char *pattern, const char *buffer)
     return -1;
 }
 
-bool at_ack()
+size_t uart_gets(uart_inst_t *uart, char *buffer, size_t buffer_size)
 {
-    const size_t max_len = 255;
-    char buffer[max_len] = {
-        0,
-    }; // init with null character
-    size_t buffer_size = 0;
-
-    uart_puts(uart1, "\r\n");
+    size_t len = 0;
     absolute_time_t time_end = make_timeout_time_ms(ESP_AT_TIMEOUT);
-    while (!time_reached(time_end))
+
+    buffer[0] = 0; // put null character
+
+    while (!time_reached(time_end) && (len < buffer_size))
     {
-        if (uart_is_readable(uart1))
+        if (uart_is_readable(uart))
         {
-            buffer[buffer_size] = uart_getc(uart1);
-            ++buffer_size;
-            buffer[buffer_size] = 0; // put null character;
-            if (find_pattern("OK", buffer) >= 0)
-            {
-                puts("OK");
-                return true;
-            }
-            else if (buffer_size >= max_len)
-            {
-                puts("BUFFER");
-                return false;
-            }
+            buffer[len] = uart_getc(uart);
+            ++len;
+            buffer[len] = 0; // put null character
         }
     }
-    puts("TIMEOUT");
-    return false;
+
+    return len;
+}
+
+bool wait_for_uart(const char *pattern)
+{
+    char buffer[256];
+    uart_gets(uart1, buffer, sizeof(buffer));
+    return find_pattern(pattern, buffer) >= 0;
 }
 
 // WIFI
 bool is_connected()
 {
-    char buffer[256] = {
-        0,
-    }; // init with null character
-    size_t buffer_size = 0;
-
     uart_puts(uart1, "AT+CWJAP?\r\n");
-
-    absolute_time_t time_end = make_timeout_time_ms(ESP_AT_TIMEOUT);
-    while (!time_reached(time_end))
-    {
-        if (uart_is_readable(uart1))
-        {
-            buffer[buffer_size] = uart_getc(uart1);
-            ++buffer_size;
-            buffer[buffer_size] = 0; // put null character;
-        }
-    }
-
-    return find_pattern("+CWJAP:", buffer) >= 0;
+    return wait_for_uart("+CWJAP:");
 }
 
 // MQTT
@@ -113,9 +90,9 @@ bool mqtt_usercfg(const char *scheme, const char *client_id)
     uart_puts(uart1, scheme);
     uart_puts(uart1, ",\"");
     uart_puts(uart1, client_id);
-    uart_puts(uart1, "\",\"\",\"\",0,0,\"\"");
+    uart_puts(uart1, "\",\"\",\"\",0,0,\"\"\r\n");
 
-    return at_ack();
+    return wait_for_uart("OK");
 }
 
 bool mqtt_conncfg(const char *lwt_topic, const char *lwt_data)
@@ -126,7 +103,7 @@ bool mqtt_conncfg(const char *lwt_topic, const char *lwt_data)
     uart_puts(uart1, lwt_data);
     uart_puts(uart1, "\",0,0\r\n");
 
-    return at_ack();
+    return wait_for_uart("OK");
 }
 
 bool mqtt_conn(const char *host, const char *port)
@@ -137,13 +114,13 @@ bool mqtt_conn(const char *host, const char *port)
     uart_puts(uart1, port);
     uart_puts(uart1, ",0\r\n");
 
-    return at_ack();
+    return wait_for_uart("OK");
 }
 
 bool mqtt_clean()
 {
-    uart_puts(uart1, "AT+MQTTCLEAN=0");
-    return at_ack();
+    uart_puts(uart1, "AT+MQTTCLEAN=0\r\n");
+    return wait_for_uart("OK");
 }
 
 bool mqtt_pub(const char *topic, const char *data)
@@ -167,7 +144,7 @@ bool mqtt_pub(const char *topic, const char *data)
 
     uart_puts(uart1, data);
 
-    return at_ack();
+    return wait_for_uart("OK");
 }
 
 int main()
@@ -189,10 +166,31 @@ int main()
     mqtt_pub("home/nodes/sensor/rp2040/status", "online");
 
     mqtt_pub("homeassistant/sensor/rp2040/monitor/config",
-             "{\"name\":\"rp2040\", \"~\":\"home/nodes/sensor/rp2040\", \"state_topic\":\"~/status\"}");
+             "{"
+             "\"name\":\"rp2040\","
+             "\"uniq_id\":\"679ee431-4703-47eb-a0c7-354e8b6f7216\","
+             "\"dev_cla\":\"timestamp\","
+             "\"~\":\"home/nodes/sensor/rp2040\","
+             "\"state_topic\":\"~/status\","
+             "\"dev\":{"
+             "\"identifiers\":[\"rp2040-679ee431-4703-47eb-a0c7-354e8b6f7216\"],"
+             "\"name\":\"rp2040\""
+             "}"
+             "}");
 
+    absolute_time_t end = get_absolute_time();
+    int i = 0;
     for (;;)
     {
+        if (time_reached(end))
+        {
+            char buffer[10];
+            sprintf(buffer, "%d", i);
+            mqtt_pub("home/nodes/sensor/rp2040/uptime", buffer);
+            ++i;
+            end = make_timeout_time_ms(60'000);
+        }
+
         int char_usb = getchar_timeout_us(1);
         if (char_usb != PICO_ERROR_TIMEOUT)
         {
