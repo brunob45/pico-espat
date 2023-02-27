@@ -2,11 +2,30 @@
 
 #include <stdio.h>
 #include "pico/stdlib.h"
+#include "hardware/adc.h"
 
 static const uint32_t ESP_AT_TIMEOUT = 100;
 
+void init_onboard_temperature()
+{
+    adc_init();
+    adc_set_temp_sensor_enabled(true);
+    adc_select_input(4);
+}
+
+float read_onboard_temperature()
+{
+    /* 12-bit conversion, assume max value == ADC_VREF == 3.3 V */
+    const float conversionFactor = 3.3f / (1 << 12);
+
+    float adc = (float)adc_read() * conversionFactor;
+    float tempC = 27.0f - (adc - 0.706f) / 0.001721f;
+
+    return tempC;
+}
+
 // Util
-size_t string_size(const char *s, const size_t max_len = 256)
+size_t string_size(const char *s, const size_t max_len = 512)
 {
     for (size_t i = 0; i < max_len; i++)
     {
@@ -151,6 +170,7 @@ int main()
 {
     stdio_init_all();
     uart_init(uart1, 115200);
+    init_onboard_temperature();
 
     gpio_set_function(4, GPIO_FUNC_UART);
     gpio_set_function(5, GPIO_FUNC_UART);
@@ -165,30 +185,32 @@ int main()
     mqtt_conn("10.0.0.167", "1883");
     mqtt_pub("home/nodes/sensor/rp2040/status", "online");
 
-    mqtt_pub("homeassistant/sensor/rp2040/monitor/config",
+    mqtt_pub("homeassistant/sensor/rp2040/temperature/config",
              "{"
-             "\"name\":\"rp2040\","
-             "\"uniq_id\":\"679ee431-4703-47eb-a0c7-354e8b6f7216\","
-             "\"dev_cla\":\"timestamp\","
+             "\"name\":\"Challenger RP2040 Temperature\","
+             "\"uniq_id\":\"rp2040-10af4047_temp\","
+             "\"dev_cla\":\"temperature\","
              "\"~\":\"home/nodes/sensor/rp2040\","
-             "\"state_topic\":\"~/status\","
+             "\"state_topic\":\"~/temperature\","
+             "\"unit_of_meas\":\"\u00b0C\","
+             "\"avty_t\": \"~/status\","
+             "\"pl_avail\": \"online\","
+             "\"pl_not_avail\": \"offline\","
              "\"dev\":{"
-             "\"identifiers\":[\"rp2040-679ee431-4703-47eb-a0c7-354e8b6f7216\"],"
+             "\"identifiers\":[\"rp2040-10af4047\"],"
              "\"name\":\"rp2040\""
              "}"
              "}");
 
     absolute_time_t end = get_absolute_time();
-    int i = 0;
     for (;;)
     {
         if (time_reached(end))
         {
             char buffer[10];
-            sprintf(buffer, "%d", i);
-            mqtt_pub("home/nodes/sensor/rp2040/uptime", buffer);
-            ++i;
-            end = make_timeout_time_ms(60'000);
+            sprintf(buffer, "%.02f", read_onboard_temperature());
+            mqtt_pub("home/nodes/sensor/rp2040/temperature", buffer);
+            end = make_timeout_time_ms(60'000); // wait 1 minute
         }
 
         int char_usb = getchar_timeout_us(1);
