@@ -178,86 +178,57 @@ bool mqtt_pub(const char *topic, const char *data)
 int main()
 {
     stdio_init_all();
+
     uart_init(uart1, baudrate);
-    init_onboard_temperature();
-
-    gpio_init(PIN_LED);
-    gpio_set_dir(PIN_LED, GPIO_OUT);
-    gpio_put(PIN_LED, false);
-
-    gpio_init(PIN_ESP8285_RST);
-    gpio_set_dir(PIN_ESP8285_RST, GPIO_OUT);
-
-    // Reset ESP8285
-    gpio_put(PIN_ESP8285_RST, false);
-    sleep_ms(100);
-    gpio_put(PIN_ESP8285_RST, true);
-
     gpio_set_function(4, GPIO_FUNC_UART);
     gpio_set_function(5, GPIO_FUNC_UART);
 
-    while (!is_connected())
-    {
-        // wait for wifi...
-    }
-
+    gpio_init(PIN_LED);
+    gpio_set_dir(PIN_LED, GPIO_OUT);
     gpio_put(PIN_LED, true);
 
-    mqtt_usercfg("1", "rp2040");
-    mqtt_conncfg("home/nodes/sensor/rp2040/status", "offline");
-    mqtt_conn("10.0.0.167", "1883");
-    mqtt_pub("home/nodes/sensor/rp2040/status", "online");
+    gpio_init(PIN_ESP8285_RST);
+    gpio_set_dir(PIN_ESP8285_RST, GPIO_OUT);
+    gpio_put(PIN_ESP8285_RST, false);
 
-    mqtt_pub("homeassistant/sensor/rp2040/temperature/config",
-             "{"
-             "\"name\":\"Challenger RP2040 Temperature\","
-             "\"uniq_id\":\"rp2040-10af4047_temp\","
-             "\"dev_cla\":\"temperature\","
-             "\"~\":\"home/nodes/sensor/rp2040\","
-             "\"state_topic\":\"~/temperature\","
-             "\"unit_of_meas\":\"\u00b0C\","
-             "\"avty_t\": \"~/status\","
-             "\"pl_avail\": \"online\","
-             "\"pl_not_avail\": \"offline\","
-             "\"dev\":{"
-             "\"identifiers\":[\"rp2040-10af4047\"],"
-             "\"name\":\"rp2040\""
-             "}"
-             "}");
+    gpio_init(PIN_ESP8285_MODE);
+    gpio_set_dir(PIN_ESP8285_MODE, GPIO_OUT);
+    gpio_put(PIN_ESP8285_MODE, false); // true = run, false = flash
 
-    uint32_t old_baudrate = baudrate;
-    bool led_state = false;
+    gpio_put(PIN_LED, false);
+
+    // reset ESP8285
+    // sleep_ms(5000);
+    // gpio_put(PIN_ESP8285_RST, true);
+    // gpio_put(PIN_LED, false);
+
+    // absolute_time_t reset_timeout = at_the_end_of_time;
+    uint old_baudrate = baudrate;
     for (;;)
     {
         const uint32_t new_baudrate = baudrate;
         if (new_baudrate != old_baudrate)
         {
-            uart_deinit(uart1);
+            // gpio_put(PIN_ESP8285_RST, false);
+            // gpio_put(PIN_LED, true);
 
+            uart_deinit(uart1);
             uart_init(uart1, new_baudrate);
             old_baudrate = new_baudrate;
 
-            led_state = !led_state;
-            gpio_put(PIN_LED, led_state);
-        }
-        if (time_reached(send_temp))
-        {
-            char buffer[32];
-            sprintf(buffer, "%.02f", read_onboard_temperature());
-            mqtt_pub("home/nodes/sensor/rp2040/temperature", buffer);
-            send_temp = make_timeout_time_ms(60'000); // wait 1 minute
+            // gpio_put(PIN_ESP8285_RST, true);
+            // gpio_put(PIN_LED, false);
         }
 
-        int char_usb = getchar_timeout_us(1);
-        if (char_usb != PICO_ERROR_TIMEOUT)
+        if (uart_is_writable(uart1))
         {
-            uart_putc_raw(uart1, char_usb);
-            if (char_usb == '\r')
+            int char_usb = getchar_timeout_us(0);
+            if (char_usb != PICO_ERROR_TIMEOUT)
             {
-                uart_putc_raw(uart1, '\n');
+                uart_putc_raw(uart1, char_usb);
             }
         }
-        if (uart_is_readable(uart1))
+        while (uart_is_readable(uart1))
         {
             putchar_raw(uart_getc(uart1));
         }
@@ -278,4 +249,12 @@ void tud_cdc_line_coding_cb(__unused uint8_t itf, cdc_line_coding_t const *p_lin
         reset_usb_boot(gpio_mask, PICO_STDIO_USB_RESET_BOOTSEL_INTERFACE_DISABLE_MASK);
     }
     baudrate = p_line_coding->bit_rate;
+}
+
+extern "C"
+void tud_cdc_line_state_cb(uint8_t itf, bool dtr, bool rts)
+{
+    gpio_put(PIN_ESP8285_MODE, dtr);
+    gpio_put(PIN_ESP8285_RST, rts);
+    gpio_put(PIN_LED, rts);
 }
