@@ -3,12 +3,17 @@
 #include <stdio.h>
 #include "pico/stdlib.h"
 #include "hardware/adc.h"
+#include "pico/bootrom.h"
+#include "tusb.h"
 
 static const uint32_t ESP_AT_TIMEOUT = 100;
 
-static const uint PIN_ESP8285_RST = 19;
-static const uint PIN_LED = 12;
 static const uint NEOPIXEL = 11;
+static const uint PIN_LED = 12;
+static const uint PIN_ESP8285_MODE = 13;
+static const uint PIN_ESP8285_RST = 19;
+
+static volatile uint32_t baudrate = 115200;
 
 void init_onboard_temperature()
 {
@@ -173,11 +178,12 @@ bool mqtt_pub(const char *topic, const char *data)
 int main()
 {
     stdio_init_all();
-    uart_init(uart1, 115200);
+    uart_init(uart1, baudrate);
     init_onboard_temperature();
 
     gpio_init(PIN_LED);
     gpio_set_dir(PIN_LED, GPIO_OUT);
+    gpio_put(PIN_LED, false);
 
     gpio_init(PIN_ESP8285_RST);
     gpio_set_dir(PIN_ESP8285_RST, GPIO_OUT);
@@ -219,9 +225,21 @@ int main()
              "}"
              "}");
 
-    absolute_time_t send_temp = get_absolute_time();
+    uint32_t old_baudrate = baudrate;
+    bool led_state = false;
     for (;;)
     {
+        const uint32_t new_baudrate = baudrate;
+        if (new_baudrate != old_baudrate)
+        {
+            uart_deinit(uart1);
+
+            uart_init(uart1, new_baudrate);
+            old_baudrate = new_baudrate;
+
+            led_state = !led_state;
+            gpio_put(PIN_LED, led_state);
+        }
         if (time_reached(send_temp))
         {
             char buffer[32];
@@ -245,4 +263,19 @@ int main()
         }
     }
     return 0;
+}
+
+extern "C"
+void tud_cdc_line_coding_cb(__unused uint8_t itf, cdc_line_coding_t const *p_line_coding)
+{
+    if (p_line_coding->bit_rate == PICO_STDIO_USB_RESET_MAGIC_BAUD_RATE)
+    {
+#ifdef PICO_STDIO_USB_RESET_BOOTSEL_ACTIVITY_LED
+        const uint gpio_mask = 1u << PICO_STDIO_USB_RESET_BOOTSEL_ACTIVITY_LED;
+#else
+        const uint gpio_mask = 0u;
+#endif
+        reset_usb_boot(gpio_mask, PICO_STDIO_USB_RESET_BOOTSEL_INTERFACE_DISABLE_MASK);
+    }
+    baudrate = p_line_coding->bit_rate;
 }
