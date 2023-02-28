@@ -228,7 +228,7 @@ int main()
                 uart_putc_raw(uart1, char_usb);
             }
         }
-        while (uart_is_readable(uart1))
+        if (uart_is_readable(uart1))
         {
             putchar_raw(uart_getc(uart1));
         }
@@ -254,7 +254,7 @@ void tud_cdc_line_coding_cb(__unused uint8_t itf, cdc_line_coding_t const *p_lin
 extern "C"
 void tud_cdc_line_state_cb(uint8_t itf, bool dtr, bool rts)
 {
-    gpio_put(PIN_ESP8285_MODE, dtr);
-    gpio_put(PIN_ESP8285_RST, rts);
-    gpio_put(PIN_LED, rts);
+    // gpio_put(PIN_ESP8285_MODE, !dtr);
+    gpio_put(PIN_ESP8285_RST, !rts);
+    gpio_put(PIN_LED, !rts);
 }
