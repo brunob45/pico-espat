@@ -6,6 +6,10 @@
 
 static const uint32_t ESP_AT_TIMEOUT = 100;
 
+static const uint PIN_ESP8285_RST = 19;
+static const uint PIN_LED = 12;
+static const uint NEOPIXEL = 11;
+
 void init_onboard_temperature()
 {
     adc_init();
@@ -172,6 +176,17 @@ int main()
     uart_init(uart1, 115200);
     init_onboard_temperature();
 
+    gpio_init(PIN_LED);
+    gpio_set_dir(PIN_LED, GPIO_OUT);
+
+    gpio_init(PIN_ESP8285_RST);
+    gpio_set_dir(PIN_ESP8285_RST, GPIO_OUT);
+
+    // Reset ESP8285
+    gpio_put(PIN_ESP8285_RST, false);
+    sleep_ms(100);
+    gpio_put(PIN_ESP8285_RST, true);
+
     gpio_set_function(4, GPIO_FUNC_UART);
     gpio_set_function(5, GPIO_FUNC_UART);
 
@@ -179,6 +194,8 @@ int main()
     {
         // wait for wifi...
     }
+
+    gpio_put(PIN_LED, true);
 
     mqtt_usercfg("1", "rp2040");
     mqtt_conncfg("home/nodes/sensor/rp2040/status", "offline");
@@ -202,15 +219,15 @@ int main()
              "}"
              "}");
 
-    absolute_time_t end = get_absolute_time();
+    absolute_time_t send_temp = get_absolute_time();
     for (;;)
     {
-        if (time_reached(end))
+        if (time_reached(send_temp))
         {
-            char buffer[10];
+            char buffer[32];
             sprintf(buffer, "%.02f", read_onboard_temperature());
             mqtt_pub("home/nodes/sensor/rp2040/temperature", buffer);
-            end = make_timeout_time_ms(60'000); // wait 1 minute
+            send_temp = make_timeout_time_ms(60'000); // wait 1 minute
         }
 
         int char_usb = getchar_timeout_us(1);
