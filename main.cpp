@@ -178,12 +178,16 @@ bool mqtt_pub(const char *topic, const char *data)
 int main()
 {
     stdio_init_all();
+
     uart_init(uart1, baudrate);
+    gpio_set_function(4, GPIO_FUNC_UART);
+    gpio_set_function(5, GPIO_FUNC_UART);
+
     init_onboard_temperature();
 
     gpio_init(PIN_LED);
     gpio_set_dir(PIN_LED, GPIO_OUT);
-    gpio_put(PIN_LED, false);
+    gpio_put(PIN_LED, true);
 
     gpio_init(PIN_ESP8285_RST);
     gpio_set_dir(PIN_ESP8285_RST, GPIO_OUT);
@@ -193,15 +197,13 @@ int main()
     sleep_ms(100);
     gpio_put(PIN_ESP8285_RST, true);
 
-    gpio_set_function(4, GPIO_FUNC_UART);
-    gpio_set_function(5, GPIO_FUNC_UART);
 
     while (!is_connected())
     {
         // wait for wifi...
     }
 
-    gpio_put(PIN_LED, true);
+    gpio_put(PIN_LED, false);
 
     mqtt_usercfg("1", "rp2040");
     mqtt_conncfg("home/nodes/sensor/rp2040/status", "offline");
@@ -226,7 +228,7 @@ int main()
              "}");
 
     uint32_t old_baudrate = baudrate;
-    bool led_state = false;
+    // absolute_time_t send_temp = get_absolute_time();
     for (;;)
     {
         const uint32_t new_baudrate = baudrate;
@@ -237,30 +239,31 @@ int main()
             uart_init(uart1, new_baudrate);
             old_baudrate = new_baudrate;
 
-            led_state = !led_state;
-            gpio_put(PIN_LED, led_state);
+            gpio_put(PIN_LED,!gpio_get(PIN_LED));
         }
-        if (time_reached(send_temp))
+
+        // if (time_reached(send_temp))
         {
             char buffer[32];
             sprintf(buffer, "%.02f", read_onboard_temperature());
             mqtt_pub("home/nodes/sensor/rp2040/temperature", buffer);
-            send_temp = make_timeout_time_ms(60'000); // wait 1 minute
+            // send_temp = make_timeout_time_ms(60'000); // wait 1 minute
+            sleep_ms(60'000);
         }
 
-        int char_usb = getchar_timeout_us(1);
-        if (char_usb != PICO_ERROR_TIMEOUT)
-        {
-            uart_putc_raw(uart1, char_usb);
-            if (char_usb == '\r')
-            {
-                uart_putc_raw(uart1, '\n');
-            }
-        }
-        if (uart_is_readable(uart1))
-        {
-            putchar_raw(uart_getc(uart1));
-        }
+        // int char_usb = getchar_timeout_us(0);
+        // if (char_usb != PICO_ERROR_TIMEOUT)
+        // {
+        //     uart_putc_raw(uart1, char_usb);
+        //     if (char_usb == '\r')
+        //     {
+        //         uart_putc_raw(uart1, '\n');
+        //     }
+        // }
+        // if (uart_is_readable(uart1))
+        // {
+        //     putchar_raw(uart_getc(uart1));
+        // }
     }
     return 0;
 }
