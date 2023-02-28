@@ -6,7 +6,7 @@
 #include "pico/bootrom.h"
 #include "tusb.h"
 
-static const uint32_t ESP_AT_TIMEOUT = 100;
+static const uint32_t ESP_AT_TIMEOUT = 10'000; // 10 s
 
 static const uint NEOPIXEL = 11;
 static const uint PIN_LED = 12;
@@ -77,38 +77,44 @@ int find_pattern(const char *pattern, const char *buffer)
     return -1;
 }
 
-size_t uart_gets(uart_inst_t *uart, char *buffer, size_t buffer_size)
+bool wait_for_uart(const char *pattern, absolute_time_t timeout_ms = ESP_AT_TIMEOUT)
 {
-    size_t len = 0;
-    absolute_time_t time_end = make_timeout_time_ms(ESP_AT_TIMEOUT);
+    char buffer[16];
+    size_t buffer_index = 0;
+    absolute_time_t end = make_timeout_time_ms(timeout_ms);
 
-    buffer[0] = 0; // put null character
+    buffer[0] = 0; // make sure first char is null
 
-    while (!time_reached(time_end) && (len < buffer_size))
+    for(;;)
     {
-        if (uart_is_readable(uart))
+        while (!uart_is_readable(uart1))
         {
-            buffer[len] = uart_getc(uart);
-            ++len;
-            buffer[len] = 0; // put null character
+            if (time_reached(end))
+            {
+                return false;
+            }
+        }
+        if (buffer_index < 15)
+        {
+            buffer[buffer_index] = uart_getc(uart1);
+            buffer_index++;
+            buffer[buffer_index] = 0; // put null
+        }
+        else
+        {
+            for(int i = 0; i < 14; i++)
+            {
+                buffer[i] = buffer[i+1];
+            }
+            buffer[14] = uart_getc(uart1);
+            buffer[15] = 0;
+        }
+        if (find_pattern(pattern, buffer) >= 0)
+        {
+            return true;
         }
     }
-
-    return len;
-}
-
-bool wait_for_uart(const char *pattern)
-{
-    char buffer[256];
-    uart_gets(uart1, buffer, sizeof(buffer));
-    return find_pattern(pattern, buffer) >= 0;
-}
-
-// WIFI
-bool is_connected()
-{
-    uart_puts(uart1, "AT+CWJAP?\r\n");
-    return wait_for_uart("+CWJAP:");
+    return false;
 }
 
 // MQTT
@@ -123,9 +129,11 @@ bool mqtt_usercfg(const char *scheme, const char *client_id)
     return wait_for_uart("OK");
 }
 
-bool mqtt_conncfg(const char *lwt_topic, const char *lwt_data)
+bool mqtt_conncfg(const char* keep_alive, const char *lwt_topic, const char *lwt_data)
 {
-    uart_puts(uart1, "AT+MQTTCONNCFG=0,0,0,\"");
+    uart_puts(uart1, "AT+MQTTCONNCFG=0,");
+    uart_puts(uart1, keep_alive);
+    uart_puts(uart1, ",0,\"");
     uart_puts(uart1, lwt_topic);
     uart_puts(uart1, "\",\"");
     uart_puts(uart1, lwt_data);
@@ -191,22 +199,22 @@ int main()
 
     gpio_init(PIN_ESP8285_RST);
     gpio_set_dir(PIN_ESP8285_RST, GPIO_OUT);
+    gpio_put(PIN_ESP8285_RST, false);
+
+    gpio_init(PIN_ESP8285_MODE);
+    gpio_set_dir(PIN_ESP8285_MODE, GPIO_OUT);
+    gpio_put(PIN_ESP8285_MODE, true); // true = run, false = flash
 
     // Reset ESP8285
-    gpio_put(PIN_ESP8285_RST, false);
-    sleep_ms(100);
+    sleep_ms(1);
     gpio_put(PIN_ESP8285_RST, true);
 
-
-    while (!is_connected())
-    {
-        // wait for wifi...
-    }
+    wait_for_uart("WIFI GOT IP");
 
     gpio_put(PIN_LED, false);
 
     mqtt_usercfg("1", "rp2040");
-    mqtt_conncfg("home/nodes/sensor/rp2040/status", "offline");
+    mqtt_conncfg("60", "home/nodes/sensor/rp2040/status", "offline");
     mqtt_conn("10.0.0.167", "1883");
     mqtt_pub("home/nodes/sensor/rp2040/status", "online");
 
@@ -228,48 +236,51 @@ int main()
              "}");
 
     uint32_t old_baudrate = baudrate;
-    // absolute_time_t send_temp = get_absolute_time();
+    absolute_time_t send_temp = get_absolute_time();
     for (;;)
     {
         const uint32_t new_baudrate = baudrate;
         if (new_baudrate != old_baudrate)
         {
-            uart_deinit(uart1);
+            gpio_put(PIN_LED, true);
+            gpio_put(PIN_ESP8285_RST, false);
 
+            uart_deinit(uart1);
             uart_init(uart1, new_baudrate);
             old_baudrate = new_baudrate;
 
-            gpio_put(PIN_LED,!gpio_get(PIN_LED));
+            sleep_ms(10);
+
+            gpio_put(PIN_ESP8285_RST, true);
+            gpio_put(PIN_LED, false);
         }
 
-        // if (time_reached(send_temp))
+        if (time_reached(send_temp))
         {
             char buffer[32];
             sprintf(buffer, "%.02f", read_onboard_temperature());
             mqtt_pub("home/nodes/sensor/rp2040/temperature", buffer);
-            // send_temp = make_timeout_time_ms(60'000); // wait 1 minute
-            sleep_ms(60'000);
+            send_temp = make_timeout_time_ms(60'000); // wait 1 minute
         }
 
-        // int char_usb = getchar_timeout_us(0);
-        // if (char_usb != PICO_ERROR_TIMEOUT)
-        // {
-        //     uart_putc_raw(uart1, char_usb);
-        //     if (char_usb == '\r')
-        //     {
-        //         uart_putc_raw(uart1, '\n');
-        //     }
-        // }
-        // if (uart_is_readable(uart1))
-        // {
-        //     putchar_raw(uart_getc(uart1));
-        // }
+        int char_usb = getchar_timeout_us(0);
+        if (char_usb != PICO_ERROR_TIMEOUT)
+        {
+            uart_putc_raw(uart1, char_usb);
+            if (char_usb == '\r')
+            {
+                uart_putc_raw(uart1, '\n');
+            }
+        }
+        if (uart_is_readable(uart1))
+        {
+            putchar_raw(uart_getc(uart1));
+        }
     }
     return 0;
 }
 
-extern "C"
-void tud_cdc_line_coding_cb(__unused uint8_t itf, cdc_line_coding_t const *p_line_coding)
+extern "C" void tud_cdc_line_coding_cb(__unused uint8_t itf, cdc_line_coding_t const *p_line_coding)
 {
     if (p_line_coding->bit_rate == PICO_STDIO_USB_RESET_MAGIC_BAUD_RATE)
     {
