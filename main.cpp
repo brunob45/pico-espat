@@ -267,10 +267,6 @@ int main()
         if (char_usb != PICO_ERROR_TIMEOUT)
         {
             uart_putc_raw(uart1, char_usb);
-            if (char_usb == '\r')
-            {
-                uart_putc_raw(uart1, '\n');
-            }
         }
         if (uart_is_readable(uart1))
         {
