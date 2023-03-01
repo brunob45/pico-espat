@@ -77,41 +77,39 @@ int find_pattern(const char *pattern, const char *buffer)
 
 bool wait_for_uart(const char *pattern, absolute_time_t timeout_ms = ESP_AT_TIMEOUT)
 {
-    char buffer[16];
     size_t buffer_index = 0;
-    const absolute_time_t end = make_timeout_time_ms(timeout_ms);
+    char buffer[16];
 
     buffer[0] = 0; // make sure first char is null
 
-    for (;;)
+    const absolute_time_t end = make_timeout_time_ms(timeout_ms);
+    while (!time_reached(end))
     {
-        while (!uart_is_readable(uart1))
+        if (uart_is_readable(uart1))
         {
-            if (time_reached(end))
+            const char new_char = uart_getc(uart1);
+            putchar_raw(new_char);
+
+            if (buffer_index < 15)
             {
-                return false;
+                buffer[buffer_index] = new_char;
+                buffer_index++;
+                buffer[buffer_index] = 0; // put null
             }
-        }
-        const char new_char = uart_getc(uart1);
-        putchar_raw(new_char);
-        if (buffer_index < 15)
-        {
-            buffer[buffer_index] = new_char;
-            buffer_index++;
-            buffer[buffer_index] = 0; // put null
-        }
-        else
-        {
-            for (int i = 0; i < 14; i++)
+            else
             {
-                buffer[i] = buffer[i + 1];
+                for (int i = 0; i < 14; i++)
+                {
+                    buffer[i] = buffer[i + 1];
+                }
+                buffer[14] = new_char;
+                buffer[15] = 0;
             }
-            buffer[14] = new_char;
-            buffer[15] = 0;
-        }
-        if (find_pattern(pattern, buffer) >= 0)
-        {
-            return true;
+
+            if (find_pattern(pattern, buffer) >= 0)
+            {
+                return true;
+            }
         }
     }
     return false;
@@ -172,6 +170,8 @@ bool mqtt_pub(const char *topic, const char *data)
     wait_for_uart(">");
 
     uart_puts(uart1, data);
+    puts(data); // echo in usb
+
     return wait_for_uart("OK");
 }
 
@@ -257,10 +257,10 @@ int main()
             char buffer[32];
             sprintf(buffer, "%.02f", read_onboard_temperature());
             const bool success = mqtt_pub("home/nodes/sensor/rp2040/temperature", buffer);
-            if (!success)
-            {
-                esp_reset();
-            }
+            // if (!success)
+            // {
+            //     esp_reset();
+            // }
         }
 
         const int char_usb = getchar_timeout_us(0);
