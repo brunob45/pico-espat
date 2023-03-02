@@ -56,7 +56,7 @@ int find_pattern(const char *pattern, const char *buffer)
         return -1; // pattern is bigger than buffer, cannot find it
     }
 
-    for (size_t i = 0; i < (buffer_size - pattern_size); i++)
+    for (size_t i = 0; i <= (buffer_size - pattern_size); i++)
     {
         bool match = true;
         for (size_t j = 0; j < pattern_size; j++)
@@ -79,6 +79,22 @@ bool wait_for_uart(const char *pattern, absolute_time_t timeout_ms = ESP_AT_TIME
 {
     size_t buffer_index = 0;
     char buffer[16];
+    char pattern_swap[16];
+
+    const uint pattern_size = string_size(pattern);
+
+    if (pattern_size >= sizeof(pattern_swap))
+    {
+        // pattern is larger than buffer, exit early
+        return -1;
+    }
+
+    // swap buffer order: "abcde" becomes "edcba" for faster pattern match
+    for (uint i = 0; i < pattern_size; i++)
+    {
+        pattern_swap[i] = pattern[pattern_size - 1 - i];
+    }
+    pattern_swap[pattern_size] = 0; // insert null character at the end
 
     buffer[0] = 0; // make sure first char is null
 
@@ -90,23 +106,15 @@ bool wait_for_uart(const char *pattern, absolute_time_t timeout_ms = ESP_AT_TIME
             const char new_char = uart_getc(uart1);
             putchar_raw(new_char);
 
-            if (buffer_index < 15)
+            for (int i = pattern_size; i > 0; i--)
             {
-                buffer[buffer_index] = new_char;
-                buffer_index++;
-                buffer[buffer_index] = 0; // put null
-            }
-            else
-            {
-                for (int i = 0; i < 14; i++)
-                {
-                    buffer[i] = buffer[i + 1];
-                }
-                buffer[14] = new_char;
-                buffer[15] = 0;
+                buffer[i] = buffer[i - 1];
             }
 
-            if (find_pattern(pattern, buffer) >= 0)
+            buffer[0] = new_char;
+            buffer[pattern_size] = 0;
+
+            if (find_pattern(pattern_swap, buffer) >= 0)
             {
                 return true;
             }
@@ -256,11 +264,7 @@ int main()
 
             char buffer[32];
             sprintf(buffer, "%.02f", read_onboard_temperature());
-            const bool success = mqtt_pub("home/nodes/sensor/rp2040/temperature", buffer);
-            // if (!success)
-            // {
-            //     esp_reset();
-            // }
+            mqtt_pub("home/nodes/sensor/rp2040/temperature", buffer);
         }
 
         const int char_usb = getchar_timeout_us(0);
