@@ -77,7 +77,6 @@ int find_pattern(const char *pattern, const char *buffer)
 
 bool wait_for_uart(const char *pattern, absolute_time_t timeout_ms = ESP_AT_TIMEOUT)
 {
-    size_t buffer_index = 0;
     char buffer[16];
     char pattern_swap[16];
 
@@ -214,7 +213,7 @@ void esp_reset()
              "\"pl_not_avail\": \"offline\","
              "\"dev\":{"
              "\"identifiers\":[\"rp2040-10af4047\"],"
-             "\"name\":\"rp2040\""
+             "\"name\":\"RP2040\""
              "}"
              "}");
 }
@@ -263,7 +262,7 @@ int main()
             send_temp = make_timeout_time_ms(60'000); // wait 1 minute
 
             char buffer[32];
-            sprintf(buffer, "%.02f", read_onboard_temperature());
+            sprintf(buffer, "%.02f", read_onboard_temperature() - 15.0f);
             mqtt_pub("home/nodes/sensor/rp2040/temperature", buffer);
         }
 
