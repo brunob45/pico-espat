@@ -247,6 +247,9 @@ int main()
     // Reset ESP8285
     esp_reset();
 
+    const uint32_t reset_timeout = 10 * 60'000; // 10 minutes
+    absolute_time_t esp_do_reset = make_timeout_time_ms(reset_timeout); // 10 minutes
+
     uint32_t old_baudrate = baudrate;
     absolute_time_t send_temp = get_absolute_time();
     absolute_time_t send_status = get_absolute_time();
@@ -268,12 +271,25 @@ int main()
 
             char buffer[32];
             sprintf(buffer, "%.02f", read_onboard_temperature() - 15.0f);
-            mqtt_pub("home/nodes/sensor/rp2040/temperature", buffer, false);
+            const bool success = mqtt_pub("home/nodes/sensor/rp2040/temperature", buffer, false);
+            if (success)
+            {
+                esp_do_reset = make_timeout_time_ms(reset_timeout);
+            }
         }
         else if (time_reached(send_status))
         {
             send_status = make_timeout_time_ms(15 * 60'000); // wait 15 minutes
-            mqtt_pub("home/nodes/sensor/rp2040/status", "online", false);
+            const bool success = mqtt_pub("home/nodes/sensor/rp2040/status", "online", false);
+            if (success)
+            {
+                esp_do_reset = make_timeout_time_ms(reset_timeout);
+            }
+        }
+        else if (time_reached(esp_do_reset))
+        {
+            // 10 minutes since last successful MQTT PUB, reset ESP
+            esp_reset();
         }
 
         const int char_usb = getchar_timeout_us(0);
