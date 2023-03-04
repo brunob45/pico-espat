@@ -134,7 +134,7 @@ bool mqtt_usercfg(const char *scheme, const char *client_id)
     return wait_for_uart("OK");
 }
 
-bool mqtt_conncfg(const char *keep_alive, const char *lwt_topic, const char *lwt_data)
+bool mqtt_conncfg(const char *keep_alive, const char *lwt_topic, const char *lwt_data, const bool retain)
 {
     uart_puts(uart1, "AT+MQTTCONNCFG=0,");
     uart_puts(uart1, keep_alive);
@@ -142,7 +142,9 @@ bool mqtt_conncfg(const char *keep_alive, const char *lwt_topic, const char *lwt
     uart_puts(uart1, lwt_topic);
     uart_puts(uart1, "\",\"");
     uart_puts(uart1, lwt_data);
-    uart_puts(uart1, "\",0,0\r\n");
+    uart_puts(uart1, "\",0,");
+    uart_puts(uart1, retain ? "1" : "0");
+    uart_puts(uart1, "\r\n");
 
     return wait_for_uart("OK");
 }
@@ -164,7 +166,7 @@ bool mqtt_clean()
     return wait_for_uart("OK");
 }
 
-bool mqtt_pub(const char *topic, const char *data)
+bool mqtt_pub(const char *topic, const char *data, const bool retain)
 {
     char data_len[32];
     sprintf(data_len, "%d", string_size(data));
@@ -172,7 +174,9 @@ bool mqtt_pub(const char *topic, const char *data)
     uart_puts(uart1, topic);
     uart_puts(uart1, "\",");
     uart_puts(uart1, data_len);
-    uart_puts(uart1, ",0,0\r\n");
+    uart_puts(uart1, ",0,");
+    uart_puts(uart1, retain ? "1" : "0");
+    uart_puts(uart1, "\r\n");
 
     wait_for_uart(">");
 
@@ -196,9 +200,8 @@ void esp_reset()
     gpio_put(PIN_LED, false);
 
     mqtt_usercfg("1", "rp2040");
-    mqtt_conncfg("0", "home/nodes/sensor/rp2040/status", "offline");
+    mqtt_conncfg("0", "home/nodes/sensor/rp2040/status", "offline", true);
     mqtt_conn("10.0.0.167", "1883");
-    mqtt_pub("home/nodes/sensor/rp2040/status", "online");
 
     mqtt_pub("homeassistant/sensor/rp2040/temperature/config",
              "{"
@@ -215,7 +218,8 @@ void esp_reset()
              "\"identifiers\":[\"rp2040-10af4047\"],"
              "\"name\":\"RP2040\""
              "}"
-             "}");
+             "}",
+             true);
 }
 
 int main()
@@ -245,6 +249,7 @@ int main()
 
     uint32_t old_baudrate = baudrate;
     absolute_time_t send_temp = get_absolute_time();
+    absolute_time_t send_status = get_absolute_time();
     for (;;)
     {
         const uint32_t new_baudrate = baudrate;
@@ -263,7 +268,12 @@ int main()
 
             char buffer[32];
             sprintf(buffer, "%.02f", read_onboard_temperature() - 15.0f);
-            mqtt_pub("home/nodes/sensor/rp2040/temperature", buffer);
+            mqtt_pub("home/nodes/sensor/rp2040/temperature", buffer, false);
+        }
+        else if (time_reached(send_status))
+        {
+            send_status = make_timeout_time_ms(15 * 60'000); // wait 15 minutes
+            mqtt_pub("home/nodes/sensor/rp2040/status", "online", false);
         }
 
         const int char_usb = getchar_timeout_us(0);
