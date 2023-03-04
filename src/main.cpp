@@ -2,9 +2,12 @@
 
 #include <stdio.h>
 #include "pico/stdlib.h"
+
+#include "usb_cdc.h"
+
 #include "hardware/adc.h"
-#include "pico/bootrom.h"
-#include "tusb.h"
+
+#include "ws2812.h"
 
 static const uint32_t ESP_AT_TIMEOUT = 10'000; // 10 s
 
@@ -12,8 +15,6 @@ static const uint NEOPIXEL = 11;
 static const uint PIN_LED = 12;
 static const uint PIN_ESP8285_MODE = 13;
 static const uint PIN_ESP8285_RST = 19;
-
-static volatile uint32_t baudrate = 115200;
 
 void init_onboard_temperature()
 {
@@ -75,7 +76,7 @@ int find_pattern(const char *pattern, const char *buffer)
     return -1;
 }
 
-bool wait_for_uart(const char *pattern, absolute_time_t timeout_ms = ESP_AT_TIMEOUT)
+bool wait_for_uart(const char *pattern, uint32_t timeout_ms = ESP_AT_TIMEOUT)
 {
     char buffer[16];
     char pattern_swap[16];
@@ -190,14 +191,14 @@ void esp_reset()
 {
     // toggle reset line
     gpio_put(PIN_ESP8285_RST, false);
-    gpio_put(PIN_LED, true);
+    ws2812_color(WS2812_COLOR::RED);
 
     sleep_ms(1);
     gpio_put(PIN_ESP8285_RST, true);
 
     wait_for_uart("WIFI GOT IP");
 
-    gpio_put(PIN_LED, false);
+    ws2812_color(WS2812_COLOR::GREEN);
 
     mqtt_usercfg("1", "rp2040");
     mqtt_conncfg("0", "home/nodes/sensor/rp2040/status", "offline", true);
@@ -226,15 +227,14 @@ int main()
 {
     stdio_init_all();
 
-    uart_init(uart1, baudrate);
+    ws2812_init(NEOPIXEL);
+    ws2812_color(WS2812_COLOR::CYAN);
+
+    uart_init(uart1, usb_get_baudrate());
     gpio_set_function(4, GPIO_FUNC_UART);
     gpio_set_function(5, GPIO_FUNC_UART);
 
     init_onboard_temperature();
-
-    gpio_init(PIN_LED);
-    gpio_set_dir(PIN_LED, GPIO_OUT);
-    gpio_put(PIN_LED, true);
 
     gpio_init(PIN_ESP8285_RST);
     gpio_set_dir(PIN_ESP8285_RST, GPIO_OUT);
@@ -250,12 +250,12 @@ int main()
     const uint32_t reset_timeout = 10 * 60'000; // 10 minutes
     absolute_time_t esp_do_reset = make_timeout_time_ms(reset_timeout); // 10 minutes
 
-    uint32_t old_baudrate = baudrate;
+    uint32_t old_baudrate = usb_get_baudrate();
     absolute_time_t send_temp = get_absolute_time();
     absolute_time_t send_status = get_absolute_time();
     for (;;)
     {
-        const uint32_t new_baudrate = baudrate;
+        const uint32_t new_baudrate = usb_get_baudrate();
         if (new_baudrate != old_baudrate)
         {
             uart_deinit(uart1);
@@ -303,18 +303,4 @@ int main()
         }
     }
     return 0;
-}
-
-extern "C" void tud_cdc_line_coding_cb(__unused uint8_t itf, cdc_line_coding_t const *p_line_coding)
-{
-    if (p_line_coding->bit_rate == PICO_STDIO_USB_RESET_MAGIC_BAUD_RATE)
-    {
-#ifdef PICO_STDIO_USB_RESET_BOOTSEL_ACTIVITY_LED
-        const uint gpio_mask = 1u << PICO_STDIO_USB_RESET_BOOTSEL_ACTIVITY_LED;
-#else
-        const uint gpio_mask = 0u;
-#endif
-        reset_usb_boot(gpio_mask, PICO_STDIO_USB_RESET_BOOTSEL_INTERFACE_DISABLE_MASK);
-    }
-    baudrate = p_line_coding->bit_rate;
 }
