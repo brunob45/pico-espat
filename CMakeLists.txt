@@ -16,6 +16,7 @@ add_executable(usb2serial
     src/main.cpp
     src/ws2812.cpp
     src/usb_cdc.c
+    src/mqtt.cpp
     )
 
 file(MAKE_DIRECTORY ${CMAKE_CURRENT_LIST_DIR}/generated)
