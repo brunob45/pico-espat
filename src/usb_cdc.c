@@ -3,7 +3,7 @@
 #include "pico/bootrom.h"
 #include "tusb.h"
 
-static volatile uint32_t usb_baudrate;
+static volatile uint32_t usb_baudrate = 115200;
 static volatile bool usb_dtr, usb_rts;
 
 uint32_t usb_get_baudrate()
