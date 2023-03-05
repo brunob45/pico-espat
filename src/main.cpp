@@ -99,7 +99,11 @@ int main()
         else if (time_reached(esp_do_reset))
         {
             // 10 minutes since last successful MQTT PUB, reset ESP
-            mqtt_reset(PIN_ESP8285_RST);
+            const bool success = mqtt_reset(PIN_ESP8285_RST);
+            if (success)
+            {
+                esp_do_reset = make_timeout_time_ms(reset_timeout);
+            }
         }
 
         const int char_usb = getchar_timeout_us(0);

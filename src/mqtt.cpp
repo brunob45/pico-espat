@@ -159,8 +159,10 @@ bool mqtt_pub(const char *topic, const char *data, const bool retain)
     return wait_for_uart("OK");
 }
 
-void mqtt_reset(uint pin)
+bool mqtt_reset(uint pin)
 {
+    bool success;
+
     // toggle reset line
     gpio_put(pin, false);
     ws2812_color(WS2812_COLOR::RED);
@@ -168,15 +170,21 @@ void mqtt_reset(uint pin)
     sleep_ms(1);
     gpio_put(pin, true);
 
-    wait_for_uart("WIFI GOT IP");
+    success = wait_for_uart("WIFI GOT IP");
+    if (!success) return false;
 
     ws2812_color(WS2812_COLOR::GREEN);
 
-    mqtt_usercfg("1", "rp2040");
-    mqtt_conncfg("0", "home/nodes/sensor/rp2040/status", "offline", true);
-    mqtt_conn("10.0.0.167", "1883");
+    success = mqtt_usercfg("1", "rp2040");
+    if (!success) return false;
 
-    mqtt_pub("homeassistant/sensor/rp2040/temperature/config",
+    success = mqtt_conncfg("0", "home/nodes/sensor/rp2040/status", "offline", true);
+    if (!success) return false;
+
+    success = mqtt_conn("10.0.0.167", "1883");
+    if (!success) return false;
+
+    success = mqtt_pub("homeassistant/sensor/rp2040/temperature/config",
              "{"
              "\"name\":\"Challenger RP2040 Temperature\","
              "\"uniq_id\":\"rp2040-10af4047_temp\","
@@ -193,4 +201,6 @@ void mqtt_reset(uint pin)
              "}"
              "}",
              true);
+
+    return success;
 }
