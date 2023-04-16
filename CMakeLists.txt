@@ -9,9 +9,12 @@ project(usb2serial)
 # initialize the Raspberry Pi Pico SDK
 pico_sdk_init()
 
+include_directories(${CMAKE_CURRENT_LIST_DIR}/include)
+
 # rest of your project
 add_executable(usb2serial
-    main.cpp
+    src/main.cpp
+    src/usb_cdc.c
     )
 
 # pull in common dependencies
