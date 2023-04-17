@@ -9,27 +9,18 @@ int main()
 {
     stdio_init_all();
 
-    uint32_t old_baudrate = usb_get_baudrate();
-
     gpio_init(25);
     gpio_set_dir(25, GPIO_OUT);
     gpio_put(25, true);
 
-    uart_init(uart0, old_baudrate);
+    uart_init(uart0, 115200);
     gpio_set_function(0, GPIO_FUNC_UART);
     gpio_set_function(1, GPIO_FUNC_UART);
+    usb_link_uart(uart0);
 
     for (;;)
     {
-        const uint32_t new_baudrate = usb_get_baudrate();
-        if (new_baudrate != old_baudrate)
-        {
-            uart_deinit(uart0);
-            uart_init(uart0, new_baudrate);
-            old_baudrate = new_baudrate;
-        }
-
-        int char_usb = getchar_timeout_us(1);
+        const int char_usb = getchar_timeout_us(1);
         if (char_usb != PICO_ERROR_TIMEOUT)
         {
             gpio_put(25, !gpio_get(25));

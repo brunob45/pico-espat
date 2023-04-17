@@ -7,7 +7,7 @@
 extern "C" {
 #endif
 
-uint32_t usb_get_baudrate();
+void usb_link_uart(uart_inst_t *uart);
 bool usb_get_rts();
 bool usb_get_dtr();
 
