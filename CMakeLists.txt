@@ -20,6 +20,7 @@ add_executable(usb2serial
 # pull in common dependencies
 target_link_libraries(usb2serial
     pico_stdlib
+    hardware_i2c
     )
 
 # enable usb output, disable uart output
