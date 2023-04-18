@@ -20,17 +20,10 @@ void ss_read(uint8_t regHigh, uint8_t regLow, uint8_t *buf, uint8_t num)
             const uint8_t a = num - pos;
             return 32 < a ? 32 : a;
         }();
-        i2c_write_blocking(i2c_default, SEESAW_ADDRESS, prefix, 2, false);
+        i2c_write_blocking(i2c_default, SEESAW_ADDRESS, prefix, 2, true);
         i2c_read_blocking(i2c_default, SEESAW_ADDRESS, buf + pos, read_now, false);
         pos += read_now;
     }
-}
-
-void ss_write(uint8_t regHigh, uint8_t regLow, uint8_t *buf = NULL, uint8_t num = 0)
-{
-    uint8_t prefix[] = {regHigh, regLow};
-    i2c_write_blocking(i2c_default, SEESAW_ADDRESS, prefix, 2, true);
-    i2c_write_blocking(i2c_default, SEESAW_ADDRESS, buf, num, false);
 }
 
 void ss_getID()
@@ -41,13 +34,22 @@ void ss_getID()
 
 void ss_pinMode(int pins)
 {
-    uint8_t cmd[] = {(uint8_t)(pins >> 24), (uint8_t)(pins >> 16),
+    uint8_t cmd[] = {SEESAW_GPIO_BASE,
+                     SEESAW_GPIO_DIRSET_BULK,
+                     (uint8_t)(pins >> 24), (uint8_t)(pins >> 16),
                      (uint8_t)(pins >> 8), (uint8_t)pins};
-    ss_write(SEESAW_GPIO_BASE, SEESAW_GPIO_DIRSET_BULK, cmd, 4);
+
+    i2c_write_blocking(i2c_default, SEESAW_ADDRESS, cmd, sizeof(cmd), false);
 }
 
-void ss_digitalWrite(int pin, int level)
+void ss_digitalWrite(uint32_t pins, uint8_t value)
 {
+    uint8_t cmd[] = {SEESAW_GPIO_BASE,
+                     value ? SEESAW_GPIO_BULK_SET : SEESAW_GPIO_BULK_CLR,
+                     (uint8_t)(pins >> 24), (uint8_t)(pins >> 16),
+                     (uint8_t)(pins >> 8), (uint8_t)pins};
+
+    i2c_write_blocking(i2c_default, SEESAW_ADDRESS, cmd, sizeof(cmd), false);
 }
 
 bool reserved_addr(uint8_t addr)
@@ -55,29 +57,8 @@ bool reserved_addr(uint8_t addr)
     return (addr & 0x78) == 0 || (addr & 0x78) == 0x78;
 }
 
-int main()
+void i2c_scan()
 {
-    stdio_init_all();
-
-    gpio_init(PICO_DEFAULT_LED_PIN);
-    gpio_set_dir(PICO_DEFAULT_LED_PIN, GPIO_OUT);
-    gpio_put(PICO_DEFAULT_LED_PIN, true);
-
-    uart_init(uart0, 115200);
-    gpio_set_function(PICO_DEFAULT_UART_TX_PIN, GPIO_FUNC_UART);
-    gpio_set_function(PICO_DEFAULT_UART_RX_PIN, GPIO_FUNC_UART);
-    // Make the UART pins available to picotool
-    bi_decl(bi_2pins_with_func(PICO_DEFAULT_UART_TX_PIN, PICO_DEFAULT_UART_RX_PIN, GPIO_FUNC_UART));
-    usb_link_uart(uart0);
-
-    i2c_init(i2c_default, 100 * 1000);
-    gpio_set_function(PICO_DEFAULT_I2C_SDA_PIN, GPIO_FUNC_I2C);
-    gpio_set_function(PICO_DEFAULT_I2C_SCL_PIN, GPIO_FUNC_I2C);
-    gpio_pull_up(PICO_DEFAULT_I2C_SDA_PIN);
-    gpio_pull_up(PICO_DEFAULT_I2C_SCL_PIN);
-    // Make the I2C pins available to picotool
-    bi_decl(bi_2pins_with_func(PICO_DEFAULT_I2C_SDA_PIN, PICO_DEFAULT_I2C_SCL_PIN, GPIO_FUNC_I2C));
-
     sleep_ms(5000);
 
     printf("\nI2C Bus Scan\n");
@@ -112,17 +93,55 @@ int main()
     {
         tight_loop_contents();
     }
+}
 
+int main()
+{
+    stdio_init_all();
+
+    gpio_init(PICO_DEFAULT_LED_PIN);
+    gpio_set_dir(PICO_DEFAULT_LED_PIN, GPIO_OUT);
+    gpio_put(PICO_DEFAULT_LED_PIN, true);
+
+    uart_init(uart0, 115200);
+    gpio_set_function(PICO_DEFAULT_UART_TX_PIN, GPIO_FUNC_UART);
+    gpio_set_function(PICO_DEFAULT_UART_RX_PIN, GPIO_FUNC_UART);
+    // Make the UART pins available to picotool
+    bi_decl(bi_2pins_with_func(PICO_DEFAULT_UART_TX_PIN, PICO_DEFAULT_UART_RX_PIN, GPIO_FUNC_UART));
+    usb_link_uart(uart0);
+
+    i2c_init(i2c_default, 100 * 1000);
+    gpio_set_function(PICO_DEFAULT_I2C_SDA_PIN, GPIO_FUNC_I2C);
+    gpio_set_function(PICO_DEFAULT_I2C_SCL_PIN, GPIO_FUNC_I2C);
+    gpio_pull_up(PICO_DEFAULT_I2C_SDA_PIN);
+    gpio_pull_up(PICO_DEFAULT_I2C_SCL_PIN);
+    // Make the I2C pins available to picotool
+    bi_decl(bi_2pins_with_func(PICO_DEFAULT_I2C_SDA_PIN, PICO_DEFAULT_I2C_SCL_PIN, GPIO_FUNC_I2C));
+
+    ss_pinMode((1 << 5));
+
+    absolute_time_t next_toggle = make_timeout_time_ms(500);
+    absolute_time_t uart_timeout = make_timeout_time_ms(0);
+    bool state = false;
     for (;;)
     {
+        if (time_reached(next_toggle) && time_reached(uart_timeout))
+        {
+            next_toggle = make_timeout_time_ms(500);
+            ss_digitalWrite((1 << 5), state);
+            state = !state;
+        }
+
         const int char_usb = getchar_timeout_us(1);
         if (char_usb != PICO_ERROR_TIMEOUT)
         {
+            uart_timeout = make_timeout_time_ms(1000);
             gpio_put(PICO_DEFAULT_LED_PIN, !gpio_get(PICO_DEFAULT_LED_PIN));
             uart_putc_raw(uart0, char_usb);
         }
         if (uart_is_readable(uart0))
         {
+            uart_timeout = make_timeout_time_ms(1000);
             putchar_raw(uart_getc(uart0));
         }
     }
