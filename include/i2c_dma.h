@@ -225,7 +225,7 @@ static inline int i2c_dma_write_word(
   uint8_t reg,        // Number of the register to write to
   uint16_t word       // 16-bit word to write
 ) {
-  const uint8_t wbuf[3] = {reg, word & 0xff, word >> 8};
+  const uint8_t wbuf[3] = {reg, (uint8_t)word, (uint8_t)(word >> 8)};
   return i2c_dma_write_read(i2c_dma, addr, wbuf, 3, NULL, 0);
 }
 
@@ -284,7 +284,7 @@ static inline int i2c_dma_write_word_swapped(
   uint8_t reg,        // Number of the register to write to
   uint16_t word       // 16-bit word to write
 ) {
-  const uint8_t wbuf[3] = {reg, word >> 8, word & 0xff};
+  const uint8_t wbuf[3] = {reg, (uint8_t)(word >> 8), (uint8_t)word};
   return i2c_dma_write_read(i2c_dma, addr, wbuf, 3, NULL, 0);
 }
 
