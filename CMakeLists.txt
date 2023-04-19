@@ -15,12 +15,14 @@ include_directories(${CMAKE_CURRENT_LIST_DIR}/include)
 add_executable(usb2serial
     src/main.cpp
     src/usb_cdc.c
+    src/i2c_dma.c
     )
 
 # pull in common dependencies
 target_link_libraries(usb2serial
     pico_stdlib
     hardware_i2c
+    hardware_dma
     )
 
 # enable usb output, disable uart output

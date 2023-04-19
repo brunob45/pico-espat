@@ -1,5 +1,5 @@
-#include "FreeRTOS.h"
-#include "semphr.h"
+// #include "FreeRTOS.h"
+// #include "semphr.h"
 #include "hardware/clocks.h"
 #include "hardware/dma.h"
 #include "hardware/gpio.h"
@@ -22,8 +22,9 @@ typedef struct i2c_dma_s {
   uint sda_gpio;
   uint scl_gpio;
 
-  SemaphoreHandle_t semaphore;
-  SemaphoreHandle_t mutex;
+//   SemaphoreHandle_t semaphore;
+//   SemaphoreHandle_t mutex;
+  volatile bool trx_done;
 
   volatile bool stop_detected;
   volatile bool abort_detected;
@@ -55,9 +56,10 @@ static void i2c_dma_irq_handler(i2c_dma_t *i2c_dma) {
     // isn't handled here. There isn't much that can be done. If
     // xSemaphoreGiveFromISR fails, the corresponding call to xSemaphoreTake
     // will eventually timeout.
-    BaseType_t task_switch_required = pdFALSE;
-    xSemaphoreGiveFromISR(i2c_dma->semaphore, &task_switch_required);
-    portYIELD_FROM_ISR(task_switch_required);
+    // BaseType_t task_switch_required = pdFALSE;
+    // xSemaphoreGiveFromISR(i2c_dma->semaphore, &task_switch_required);
+    // portYIELD_FROM_ISR(task_switch_required);
+    i2c_dma->trx_done = true;
   }
 }
 
@@ -159,11 +161,11 @@ static int i2c_dma_init_intern(i2c_dma_t *i2c_dma) {
   i2c_dma->stop_detected = false;
   i2c_dma->abort_detected = false;
 
-  if (uxSemaphoreGetCount(i2c_dma->semaphore) != 0) {
-    if (xSemaphoreTake(i2c_dma->semaphore, 0) != pdTRUE) {
-      return PICO_ERROR_GENERIC;
-    }
-  }
+//   if (uxSemaphoreGetCount(i2c_dma->semaphore) != 0) {
+//     if (xSemaphoreTake(i2c_dma->semaphore, 0) != pdTRUE) {
+//       return PICO_ERROR_GENERIC;
+//     }
+//   }
 
   // Don't do anything with i2c_dma->mutex here, let i2c_dma_write_read take
   // care of it. Also, directly after creation with xSemaphoreCreateMutex a
@@ -223,15 +225,16 @@ int i2c_dma_init(
   i2c_dma->sda_gpio = sda_gpio;
   i2c_dma->scl_gpio = scl_gpio;
 
-  i2c_dma->semaphore = xSemaphoreCreateBinary();
-  if (i2c_dma->semaphore == NULL) {
-    return PICO_ERROR_GENERIC;
-  }
+    i2c_dma->trx_done = false;
+//   i2c_dma->semaphore = xSemaphoreCreateBinary();
+//   if (i2c_dma->semaphore == NULL) {
+//     return PICO_ERROR_GENERIC;
+//   }
 
-  i2c_dma->mutex = xSemaphoreCreateMutex();
-  if (i2c_dma->mutex == NULL) {
-    return PICO_ERROR_GENERIC;
-  }
+//   i2c_dma->mutex = xSemaphoreCreateMutex();
+//   if (i2c_dma->mutex == NULL) {
+//     return PICO_ERROR_GENERIC;
+//   }
 
   return i2c_dma_init_intern(i2c_dma);
 }
@@ -315,9 +318,17 @@ static int i2c_dma_write_read_internal(
   // normally be an abort followed by a stop. Scenarios where a stop and/or
   // abort are not detected are also possible, for these scenarios a timeout
   // is needed. As an example, no stop will be detected if SDA gets stuck low.
-  const bool timeout = xSemaphoreTake(
-    i2c_dma->semaphore, I2C_TRANSFER_TIMEOUT_MS * portTICK_PERIOD_MS
-  ) == pdFALSE;
+//   const bool timeout = xSemaphoreTake(
+//     i2c_dma->semaphore, I2C_TRANSFER_TIMEOUT_MS * portTICK_PERIOD_MS
+//   ) == pdFALSE;
+    bool timeout = false;
+    const absolute_time_t time_timeout = make_timeout_time_ms(I2C_TRANSFER_TIMEOUT_MS);
+    do
+    {
+        tight_loop_contents();
+        timeout = time_reached(time_timeout);
+    } while (!i2c_dma->trx_done && !timeout);
+    i2c_dma->trx_done = false;
 
   // If there were problems, abort the DMA.
   if (timeout || i2c_dma->abort_detected || !i2c_dma->stop_detected) {
@@ -357,19 +368,19 @@ int i2c_dma_write_read(
   uint8_t *rbuf,
   size_t rbuf_len
 ) {
-  if (xSemaphoreTake(
-      i2c_dma->mutex, I2C_TAKE_MUTEX_TIMEOUT_MS * portTICK_PERIOD_MS
-    ) != pdTRUE) {
-    return PICO_ERROR_TIMEOUT;
-  }
+//   if (xSemaphoreTake(
+//       i2c_dma->mutex, I2C_TAKE_MUTEX_TIMEOUT_MS * portTICK_PERIOD_MS
+//     ) != pdTRUE) {
+//     return PICO_ERROR_TIMEOUT;
+//   }
 
   const int rc = i2c_dma_write_read_internal(
     i2c_dma, addr, wbuf, wbuf_len, rbuf, rbuf_len
   );
 
-  if (xSemaphoreGive(i2c_dma->mutex) != pdTRUE && rc == PICO_OK) {
-    return PICO_ERROR_GENERIC;
-  }
+//   if (xSemaphoreGive(i2c_dma->mutex) != pdTRUE && rc == PICO_OK) {
+//     return PICO_ERROR_GENERIC;
+//   }
 
   return rc;
 }
