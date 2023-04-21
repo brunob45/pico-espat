@@ -8,6 +8,7 @@ extern "C" {
 #endif
 
 void usb_link_uart(uart_inst_t *uart);
+uint32_t usb_get_bitrate();
 bool usb_get_rts();
 bool usb_get_dtr();
 

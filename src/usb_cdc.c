@@ -5,10 +5,16 @@
 
 static uart_inst_t *my_uart;
 static volatile cdc_line_control_state_t line_control;
+static volatile cdc_line_coding_t line_coding;
 
 void usb_link_uart(uart_inst_t *uart)
 {
     my_uart = uart;
+}
+
+uint32_t usb_get_bitrate()
+{
+    return line_coding.bit_rate;
 }
 
 bool usb_get_dtr()
@@ -48,6 +54,7 @@ void tud_cdc_line_coding_cb(__unused uint8_t itf, cdc_line_coding_t const *p_lin
 #endif
         reset_usb_boot(gpio_mask, PICO_STDIO_USB_RESET_BOOTSEL_INTERFACE_DISABLE_MASK);
     }
+    line_coding = *p_line_coding;
     if (my_uart != 0)
     {
         uart_set_baudrate(my_uart, p_line_coding->bit_rate);

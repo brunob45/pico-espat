@@ -80,50 +80,8 @@ void ss_analogWrite(uint32_t pin, uint16_t value)
 #endif
 }
 
-bool reserved_addr(uint8_t addr)
+uint16_t make_lumi(uint16_t value)
 {
-    return (addr & 0x78) == 0 || (addr & 0x78) == 0x78;
-}
-
-void i2c_scan()
-{
-    sleep_ms(5000);
-
-    printf("\nI2C Bus Scan\n");
-    printf("   0  1  2  3  4  5  6  7  8  9  A  B  C  D  E  F\n");
-
-    for (int addr = 0; addr < (1 << 7); ++addr)
-    {
-        if (addr % 16 == 0)
-        {
-            printf("%02x ", addr);
-        }
-
-        // Perform a 1-byte dummy read from the probe address. If a slave
-        // acknowledges this address, the function returns the number of bytes
-        // transferred. If the address byte is ignored, the function returns
-        // -1.
-
-        // Skip over any reserved addresses.
-        int ret;
-        uint8_t rxdata;
-        if (reserved_addr(addr))
-            ret = PICO_ERROR_GENERIC;
-        else
-            ret = i2c_read_blocking(i2c_default, addr, &rxdata, 1, false);
-
-        printf(ret < 0 ? "." : "@");
-        printf(addr % 16 == 15 ? "\n" : "  ");
-    }
-    printf("Done.\n");
-
-    for (;;)
-    {
-        tight_loop_contents();
-    }
-}
-
-uint16_t make_lumi(uint16_t value) {
     const float normalized = value / 65535.0f;
     return (uint16_t)(65535 * normalized * normalized);
 }
@@ -172,8 +130,8 @@ int main()
         if (time_reached(next_toggle) && time_reached(uart_timeout))
         {
             next_toggle = make_timeout_time_ms(rate);
-            ss_analogWrite(4, 65535-make_lumi(brightness));
-            ss_analogWrite(5, 65535-make_lumi(65535-brightness));
+            ss_analogWrite(4, 65535 - make_lumi(brightness));
+            ss_analogWrite(5, 65535 - make_lumi(65535 - brightness));
 
             brightness += fadeAmount;
             if (brightness <= 0 || brightness >= 65535)
@@ -183,17 +141,21 @@ int main()
             }
         }
 
-        const int char_usb = getchar_timeout_us(1);
-        if (char_usb != PICO_ERROR_TIMEOUT)
+        if (usb_get_bitrate() > 115200)
         {
-            uart_timeout = make_timeout_time_ms(1000);
-            gpio_put(PICO_DEFAULT_LED_PIN, !gpio_get(PICO_DEFAULT_LED_PIN));
-            uart_putc_raw(uart0, char_usb);
-        }
-        if (uart_is_readable(uart0))
-        {
-            uart_timeout = make_timeout_time_ms(1000);
-            putchar_raw(uart_getc(uart0));
+            // UPDI speed is greater than 115200
+            const int char_usb = getchar_timeout_us(1);
+            if (char_usb != PICO_ERROR_TIMEOUT)
+            {
+                uart_timeout = make_timeout_time_ms(1000);
+                gpio_put(PICO_DEFAULT_LED_PIN, !gpio_get(PICO_DEFAULT_LED_PIN));
+                uart_putc_raw(uart0, char_usb);
+            }
+            if (uart_is_readable(uart0))
+            {
+                uart_timeout = make_timeout_time_ms(1000);
+                putchar_raw(uart_getc(uart0));
+            }
         }
     }
     return 0;
