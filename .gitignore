@@ -43,6 +43,5 @@ _deps
 *.out
 *.app
 
-.vscode/
 build/
 kicad/pico-efi-backups/

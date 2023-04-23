@@ -143,7 +143,7 @@ int main()
 
         if (usb_get_bitrate() > 115200)
         {
-            // UPDI speed is greater than 115200
+            // UPDI speed is 230400
             const int char_usb = getchar_timeout_us(1);
             if (char_usb != PICO_ERROR_TIMEOUT)
             {
