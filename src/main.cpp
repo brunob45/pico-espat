@@ -92,7 +92,6 @@ int main()
 
     gpio_init(PICO_DEFAULT_LED_PIN);
     gpio_set_dir(PICO_DEFAULT_LED_PIN, GPIO_OUT);
-    gpio_put(PICO_DEFAULT_LED_PIN, true);
 
     uart_init(uart0, 115200);
     gpio_set_function(PICO_DEFAULT_UART_TX_PIN, GPIO_FUNC_UART);
@@ -148,7 +147,7 @@ int main()
             if (char_usb != PICO_ERROR_TIMEOUT)
             {
                 uart_timeout = make_timeout_time_ms(1000);
-                gpio_put(PICO_DEFAULT_LED_PIN, !gpio_get(PICO_DEFAULT_LED_PIN));
+                gpio_xor_mask(1 << PICO_DEFAULT_LED_PIN);
                 uart_putc_raw(uart0, char_usb);
             }
             if (uart_is_readable(uart0))
