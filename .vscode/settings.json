@@ -1,13 +1,23 @@
 {
-    "files.associations": {
-        "random": "cpp",
-        "array": "cpp",
-        "deque": "cpp",
-        "string": "cpp",
-        "unordered_map": "cpp",
-        "vector": "cpp",
-        "string_view": "cpp",
-        "initializer_list": "cpp"
+    // These settings tweaks to the cmake plugin will ensure
+    // that you debug using cortex-debug instead of trying to launch
+    // a Pico binary on the host
+    "cmake.statusbar.advanced": {
+        "debug": {
+            "visibility": "hidden"
+        },
+        "launch": {
+            "visibility": "hidden"
+        },
+        "buildTarget": {
+            "visibility": "hidden"
+        }
     },
-    "cmake.configureOnOpen": true
+    "cmake.buildBeforeRun": true,
+    "cmake.configureOnOpen": true,
+    "cmake.configureSettings": {
+      "CMAKE_MODULE_PATH": "${env:PICO_INSTALL_PATH}/pico-sdk-tools"
+    },
+    "cmake.generator": "Ninja",
+    "C_Cpp.default.configurationProvider": "ms-vscode.cmake-tools"
 }

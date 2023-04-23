@@ -1,12 +1,15 @@
 {
-	"version": "2.0.0",
-	"tasks": [
-		{
-			"type": "cmake",
-			"label": "CMake: install",
-			"command": "pico",
-			"problemMatcher": [],
-			"detail": "CMake template install task"
-		}
-	]
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Build",
+      "type": "cmake",
+      "command": "build",
+      "problemMatcher": "$gcc",
+      "group": {
+        "kind": "build",
+        "isDefault": true
+      }
+    }
+  ]
 }
