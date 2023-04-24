@@ -1,4 +1,4 @@
-// https://raw.githubusercontent.com/fivdi/pico-i2c-dma
+// https://github.com/fivdi/pico-i2c-dma
 
 #ifndef _I2C_DMA_H
 #define _I2C_DMA_H

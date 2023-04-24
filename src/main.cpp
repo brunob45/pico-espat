@@ -13,60 +13,35 @@ static i2c_dma_t *i2c0_dma;
 #include "hardware/i2c.h"
 #endif
 
-void ss_read(uint8_t regHigh, uint8_t regLow, uint8_t *buf, uint8_t num)
-{
-    uint8_t pos = 0;
-    uint8_t prefix[2];
-    prefix[0] = (uint8_t)regHigh;
-    prefix[1] = (uint8_t)regLow;
-    while (pos < num)
-    {
-        uint8_t read_now = [num, pos]
-        {
-            const uint8_t a = num - pos;
-            return 32 < a ? 32 : a;
-        }();
-        i2c_write_blocking(i2c_default, SEESAW_ADDRESS, prefix, 2, true);
-        i2c_read_blocking(i2c_default, SEESAW_ADDRESS, buf + pos, read_now, false);
-        pos += read_now;
-    }
-}
-
-void ss_getID()
-{
-    uint8_t c = 0;
-    ss_read(SEESAW_STATUS_BASE, SEESAW_STATUS_HW_ID, &c, 1);
-}
-
-void ss_pinMode(int pins)
+int ss_pinMode(int pin_mask, bool output)
 {
     uint8_t cmd[] = {SEESAW_GPIO_BASE,
-                     SEESAW_GPIO_DIRSET_BULK,
-                     (uint8_t)(pins >> 24), (uint8_t)(pins >> 16),
-                     (uint8_t)(pins >> 8), (uint8_t)pins};
+                     output ? SEESAW_GPIO_DIRSET_BULK : SEESAW_GPIO_DIRCLR_BULK,
+                     (uint8_t)(pin_mask >> 24), (uint8_t)(pin_mask >> 16),
+                     (uint8_t)(pin_mask >> 8), (uint8_t)pin_mask};
 
 #if USE_I2C_DMA
-    i2c_dma_write(i2c0_dma, SEESAW_ADDRESS, cmd, sizeof(cmd));
+    return i2c_dma_write(i2c0_dma, SEESAW_ADDRESS, cmd, sizeof(cmd));
 #else
-    i2c_write_blocking(i2c_default, SEESAW_ADDRESS, cmd, sizeof(cmd), false);
+    return i2c_write_blocking(i2c_default, SEESAW_ADDRESS, cmd, sizeof(cmd), false);
 #endif
 }
 
-void ss_digitalWrite(uint32_t pins, uint8_t value)
+int ss_digitalWrite(uint32_t pin_mask, uint8_t value)
 {
     uint8_t cmd[] = {SEESAW_GPIO_BASE,
                      value ? SEESAW_GPIO_BULK_SET : SEESAW_GPIO_BULK_CLR,
-                     (uint8_t)(pins >> 24), (uint8_t)(pins >> 16),
-                     (uint8_t)(pins >> 8), (uint8_t)pins};
+                     (uint8_t)(pin_mask >> 24), (uint8_t)(pin_mask >> 16),
+                     (uint8_t)(pin_mask >> 8), (uint8_t)pin_mask};
 
 #if USE_I2C_DMA
-    i2c_dma_write(i2c0_dma, SEESAW_ADDRESS, cmd, sizeof(cmd));
+    return i2c_dma_write(i2c0_dma, SEESAW_ADDRESS, cmd, sizeof(cmd));
 #else
-    i2c_write_blocking(i2c_default, SEESAW_ADDRESS, cmd, sizeof(cmd), false);
+    return i2c_write_blocking(i2c_default, SEESAW_ADDRESS, cmd, sizeof(cmd), false);
 #endif
 }
 
-void ss_analogWrite(uint32_t pin, uint16_t value)
+int ss_analogWrite(uint8_t pin, uint16_t value)
 {
     uint8_t cmd[] = {SEESAW_TIMER_BASE,
                      SEESAW_TIMER_PWM,
@@ -74,16 +49,32 @@ void ss_analogWrite(uint32_t pin, uint16_t value)
                      (uint8_t)(value >> 8), (uint8_t)value};
 
 #if USE_I2C_DMA
-    i2c_dma_write(i2c0_dma, SEESAW_ADDRESS, cmd, sizeof(cmd));
+    return i2c_dma_write(i2c0_dma, SEESAW_ADDRESS, cmd, sizeof(cmd));
+#else
+    return i2c_write_blocking(i2c_default, SEESAW_ADDRESS, cmd, sizeof(cmd), false);
+#endif
+}
+
+uint16_t ss_analogRead(uint8_t pin)
+{
+    uint8_t cmd[] = {SEESAW_ADC_BASE,
+                     (uint8_t)(SEESAW_ADC_CHANNEL_OFFSET + pin)};
+    uint8_t res[2];
+
+#if USE_I2C_DMA
+    i2c_dma_write_read(i2c0_dma, SEESAW_ADDRESS, cmd, sizeof(cmd), res, sizeof(res));
 #else
     i2c_write_blocking(i2c_default, SEESAW_ADDRESS, cmd, sizeof(cmd), false);
+    sleep_ms(1);
+    i2c_read_blocking(i2c_default, SEESAW_ADDRESS, res, sizeof(res), false);
 #endif
+    return (res[0] << 8) + res[1];
 }
 
 uint16_t make_lumi(uint16_t value)
 {
-    const float normalized = value / 65535.0f;
-    return (uint16_t)(65535 * normalized * normalized);
+    const uint32_t squared = (uint32_t)value * value;
+    return (uint16_t)(squared >> 16);
 }
 
 int main()
@@ -115,10 +106,10 @@ int main()
     // Make the I2C pins available to picotool
     bi_decl(bi_2pins_with_func(PICO_DEFAULT_I2C_SDA_PIN, PICO_DEFAULT_I2C_SCL_PIN, GPIO_FUNC_I2C));
 
-    ss_pinMode((1 << 4) | (1 << 5));
+    // ss_pinMode((1 << 4) | (1 << 5), true);
 
     int32_t rate = 100;
-    int32_t fadeAmount = 655;
+    int32_t fadeAmount = 0xffff/100;
     int32_t brightness = 0;
 
     absolute_time_t next_toggle = make_timeout_time_ms(rate);
@@ -129,14 +120,20 @@ int main()
         if (time_reached(next_toggle) && time_reached(uart_timeout))
         {
             next_toggle = make_timeout_time_ms(rate);
-            ss_analogWrite(4, 65535 - make_lumi(brightness));
-            ss_analogWrite(5, 65535 - make_lumi(65535 - brightness));
+            uint16_t res = 0xfffful * ss_analogRead(0) / 0x3ff; // 1023 --> 65535
+            ss_analogWrite(4, 0xffff - make_lumi(res));
+            ss_analogWrite(5, 0xffff - make_lumi(brightness));
 
             brightness += fadeAmount;
-            if (brightness <= 0 || brightness >= 65535)
+            if (brightness <= 0 || brightness >= 0xffff)
             {
                 fadeAmount *= -1;
                 brightness += fadeAmount;
+            }
+
+            if (usb_get_bitrate() <= 115200)
+            {
+                printf("%d\n", res);
             }
         }
 

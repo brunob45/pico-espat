@@ -1,4 +1,4 @@
-// https://raw.githubusercontent.com/fivdi/pico-i2c-dma
+// https://github.com/fivdi/pico-i2c-dma
 
 // #include "FreeRTOS.h"
 // #include "semphr.h"
@@ -227,7 +227,6 @@ int i2c_dma_init(
   i2c_dma->sda_gpio = sda_gpio;
   i2c_dma->scl_gpio = scl_gpio;
 
-    i2c_dma->trx_done = false;
 //   i2c_dma->semaphore = xSemaphoreCreateBinary();
 //   if (i2c_dma->semaphore == NULL) {
 //     return PICO_ERROR_GENERIC;
@@ -303,6 +302,7 @@ static int i2c_dma_write_read_internal(
   // Tell the I2C peripheral the adderss of the device for the transfer.
   i2c_dma_set_target_addr(i2c_dma->i2c, addr);
 
+  i2c_dma->trx_done = false;
   i2c_dma->stop_detected = false;
   i2c_dma->abort_detected = false;
 
@@ -323,14 +323,13 @@ static int i2c_dma_write_read_internal(
 //   const bool timeout = xSemaphoreTake(
 //     i2c_dma->semaphore, I2C_TRANSFER_TIMEOUT_MS * portTICK_PERIOD_MS
 //   ) == pdFALSE;
-    bool timeout = false;
-    const absolute_time_t time_timeout = make_timeout_time_ms(I2C_TRANSFER_TIMEOUT_MS);
-    do
-    {
-        tight_loop_contents();
-        timeout = time_reached(time_timeout);
-    } while (!i2c_dma->trx_done && !timeout);
-    i2c_dma->trx_done = false;
+  bool timeout = false;
+  const absolute_time_t time_timeout = make_timeout_time_ms(I2C_TRANSFER_TIMEOUT_MS);
+  do
+  {
+      tight_loop_contents();
+      timeout = time_reached(time_timeout);
+  } while (!i2c_dma->trx_done && !timeout);
 
   // If there were problems, abort the DMA.
   if (timeout || i2c_dma->abort_detected || !i2c_dma->stop_detected) {
