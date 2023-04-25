@@ -4,7 +4,7 @@
 #define CONFIG_I2C_PERIPH_ADDR 0x49
 
 #define CONFIG_ADC 1
-// #define CONFIG_PWM 1
+#define CONFIG_PWM 1
 // #define CONFIG_UART 1
 // #define CONFIG_UART_BUF_MAX 120
 // #define CONFIG_UART_SERCOM Serial
