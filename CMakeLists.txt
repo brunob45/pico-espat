@@ -16,7 +16,7 @@ add_executable(pico-efi
     src/main.cpp
     src/usb_cdc.c
     src/i2c_dma.c
-    src/seesaw.c
+    src/seesaw.cpp
     )
 
 # pull in common dependencies
