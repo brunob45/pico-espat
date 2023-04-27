@@ -21,9 +21,11 @@ add_executable(pico-efi
 
 # pull in common dependencies
 target_link_libraries(pico-efi
-    pico_stdlib
-    hardware_i2c
     hardware_dma
+    hardware_i2c
+    pico_multicore
+    pico_stdlib
+    pico_sync
     )
 
 # enable usb output, disable uart output
