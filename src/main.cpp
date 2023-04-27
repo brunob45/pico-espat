@@ -13,11 +13,13 @@ uint16_t make_lumi(uint16_t value)
 
 static semaphore_t sem_micros;
 static uint32_t delta_micros;
-static uint32_t last_micros;
+static uint32_t delta2_micros;
 
 void core1_entry()
 {
     bool last_state = false;
+    uint32_t last_micros;
+    uint32_t last_delta;
 
     for (;;)
     {
@@ -25,7 +27,9 @@ void core1_entry()
         if (!last_state && current_state)
         {
             const uint32_t now_micros = time_us_32();
+            last_delta = delta_micros;
             delta_micros = now_micros - last_micros;
+            delta2_micros = delta_micros - last_delta;
             last_micros = now_micros;
             sem_release(&sem_micros);
         }
@@ -84,13 +88,13 @@ int main()
         {
             if ((usb_get_bitrate() <= 115200) && time_reached(uart_timeout))
             {
-                printf("%d\n", delta_micros);
+                printf("%d %d\n", delta_micros, delta2_micros);
             }
         }
 
         if (time_reached(next_toggle))
         {
-            next_toggle = delayed_by_ms(next_toggle, level / 1000 + 100);
+            next_toggle = delayed_by_us(next_toggle, level + 100'000);
             gpio_xor_mask(1 << 15);
         }
 
