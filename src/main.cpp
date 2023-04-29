@@ -6,9 +6,10 @@
 #include "usb_cdc.h"
 
 static semaphore_t sem_decoder;
-static uint32_t tooth_avg;
-static int32_t tooth_accel;
+static uint32_t tooth_time;
 const uint decode_pin_base = 14;
+static uint32_t core1_cycle_max = 0;
+static uint32_t rev_count = 0;
 
 struct
 {
@@ -35,32 +36,125 @@ uint16_t make_lumi(uint16_t value)
     return (uint16_t)(squared >> 16);
 }
 
+struct filter_t {
+    uint32_t width;
+    int32_t hyst_upper, hyst_lower;
+    int32_t output;
+};
+
+void filter_init(filter_t* filter, uint32_t width)
+{
+    if (filter)
+    {
+        filter->width = width;
+        filter->hyst_upper = 0;
+        filter->hyst_lower = 0;
+        filter->output = 0;
+    }
+}
+
+int32_t filter_update_tolband(filter_t* filter, int32_t value)
+{
+    if (filter)
+    {
+        if (value > (filter->output + filter->width))
+        {
+            filter->output = value - filter->width;
+        }
+        else if (value < (filter->output - filter->width))
+        {
+            filter->output = value + filter->width;
+        }
+        return filter->output;
+    }
+    return 0;
+}
+
+
+int32_t filter_update_hysteresis(filter_t* filter, int32_t value)
+{
+    if (filter)
+    {
+        if (value > filter->hyst_upper)
+        {
+            filter->output = value;
+            filter->hyst_upper = value;
+            filter->hyst_lower = value - filter->width;
+        }
+        else if (value < filter->hyst_lower)
+        {
+            filter->output = value;
+            filter->hyst_lower = value;
+            filter->hyst_upper = value + filter->width;
+        }
+        return filter->output;
+    }
+    return 0;
+}
+
 void core1_entry()
 {
-    bool last_state = false;
-    uint32_t tooth_len[2];
+    bool crank_last = false;
+    uint32_t time_low, time_high;
     uint32_t last_micros;
     absolute_time_t debounce = get_absolute_time();
+    absolute_time_t next_tooth = at_the_end_of_time;
+    uint8_t current_tooth = 0;
+    uint32_t last_cycle = time_us_32();
+
+    gpio_init(16);
+    gpio_set_dir(16, true);
 
     for (;;)
     {
-        const bool current_state = gpio_get(decode_pin_base);
-        if (last_state != current_state)
+        const absolute_time_t now = get_absolute_time();
+        const uint32_t now_micros = to_us_since_boot(now);
+
+        // cycle time statistics
+        const uint32_t cycle_time = now_micros - last_cycle;
+        if (cycle_time > core1_cycle_max)
         {
-            const uint32_t now_micros = time_us_32();
+            core1_cycle_max = cycle_time;
+        }
+        last_cycle = now_micros;
+
+        const bool cam_state = gpio_get(decode_pin_base);
+        const bool crank_state = gpio_get(decode_pin_base + 1);
+        if (crank_last != crank_state)
+        {
             if (time_reached(debounce))
             {
-                debounce = make_timeout_time_ms(1);
+                debounce = delayed_by_us(now, 500);
+                crank_last = crank_state;
 
-                tooth_len[current_state ? 0 : 1] = now_micros - last_micros;
-                const uint32_t last_avg = tooth_avg;
-                tooth_avg = tooth_len[0] + tooth_len[1];
-                tooth_accel = tooth_avg - last_avg;
+                if (++current_tooth >= 8)
+                {
+                    current_tooth = 0;
+                    ++rev_count;
+                }
+
+                if (crank_state)
+                {
+                    // rising edge
+                    time_low = now_micros - last_micros;
+                    next_tooth = delayed_by_us(now, time_high);
+                }
+                else
+                {
+                    // falling edge
+                    time_high = now_micros - last_micros;
+                    next_tooth = delayed_by_us(now, time_low);
+                    if (cam_state)
+                    {
+                        current_tooth = 5;
+                    }
+                }
+                tooth_time = time_low + time_high;
                 last_micros = now_micros;
                 sem_release(&sem_decoder);
             }
-            last_state = current_state;
         }
+        gpio_put(16, time_reached(next_tooth));
     }
 }
 
@@ -92,6 +186,10 @@ int main()
 
     uint32_t level = 0;
     uint8_t tooth = 0;
+    filter_t filter_tol, filter_hyst;
+
+    filter_init(&filter_tol, 5);
+    filter_init(&filter_hyst, 5);
 
     absolute_time_t next_update = make_timeout_time_ms(rate_ms);
     absolute_time_t uart_timeout = get_absolute_time();
@@ -116,19 +214,21 @@ int main()
 
         if (sem_try_acquire(&sem_decoder))
         {
+            const int32_t new_rpm = 60'000'000 / (tooth_time * 2);
+            const int32_t rpm_tol = filter_update_tolband(&filter_tol, new_rpm);
+            const int32_t rpm_hyst = filter_update_hysteresis(&filter_hyst, new_rpm);
             if ((usb_get_bitrate() <= 115200) && time_reached(uart_timeout))
             {
-                printf("%d %d\n", tooth_avg, tooth_accel);
+                printf("%d %d %d %d\n", new_rpm, rpm_tol, rpm_hyst, core1_cycle_max);
             }
         }
 
         if (time_reached(next_toggle))
         {
             gpio_put_masked(0b11 << decode_pin_base, decode_sim[tooth].pins << decode_pin_base);
-            const uint next_delay = decode_sim[tooth].delay * (level + 30000) / 1000;
+            const uint next_delay = decode_sim[tooth].delay * (235 - (level / 320));
 
-            ++tooth;
-            if (tooth >= 12)
+            if (++tooth >= 12)
             {
                 tooth = 0;
             }
