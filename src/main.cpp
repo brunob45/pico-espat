@@ -36,13 +36,14 @@ uint16_t make_lumi(uint16_t value)
     return (uint16_t)(squared >> 16);
 }
 
-struct filter_t {
+struct filter_t
+{
     uint32_t width;
     int32_t hyst_upper, hyst_lower;
     int32_t output;
 };
 
-void filter_init(filter_t* filter, uint32_t width)
+void filter_init(filter_t *filter, uint32_t width)
 {
     if (filter)
     {
@@ -53,7 +54,7 @@ void filter_init(filter_t* filter, uint32_t width)
     }
 }
 
-int32_t filter_update_tolband(filter_t* filter, int32_t value)
+int32_t filter_update_tolband(filter_t *filter, int32_t value)
 {
     if (filter)
     {
@@ -70,8 +71,7 @@ int32_t filter_update_tolband(filter_t* filter, int32_t value)
     return 0;
 }
 
-
-int32_t filter_update_hysteresis(filter_t* filter, int32_t value)
+int32_t filter_update_hysteresis(filter_t *filter, int32_t value)
 {
     if (filter)
     {
@@ -195,6 +195,15 @@ int main()
     absolute_time_t uart_timeout = get_absolute_time();
     absolute_time_t next_toggle = make_timeout_time_ms(rate_ms);
 
+    while (!ss_ping())
+    {
+        busy_wait_ms(1);
+        tight_loop_contents();
+    }
+
+    rev_count = (ss_eepromRead(0) << 24) + (ss_eepromRead(1) << 16) + (ss_eepromRead(2) << 8) + (ss_eepromRead(3) << 0);
+    absolute_time_t eeprom_save = make_timeout_time_ms(10'000);
+
     sem_init(&sem_decoder, 0, 1);
 
     multicore_launch_core1(core1_entry);
@@ -219,7 +228,7 @@ int main()
             const int32_t rpm_hyst = filter_update_hysteresis(&filter_hyst, new_rpm);
             if ((usb_get_bitrate() <= 115200) && time_reached(uart_timeout))
             {
-                printf("%d %d %d %d\n", new_rpm, rpm_tol, rpm_hyst, core1_cycle_max);
+                printf("%d %d %d %d\n", new_rpm, rpm_tol, rpm_hyst, rev_count);
             }
         }
 
@@ -251,6 +260,12 @@ int main()
                 uart_timeout = make_timeout_time_ms(1000);
                 putchar_raw(uart_getc(uart0));
             }
+        }
+
+        if (time_reached(eeprom_save))
+        {
+            ss_eepromWrite(0, rev_count);
+            eeprom_save = delayed_by_ms(eeprom_save, 10'000);
         }
     }
     return 0;

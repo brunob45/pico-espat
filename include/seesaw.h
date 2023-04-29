@@ -12,5 +12,8 @@ uint16_t ss_analogRead(uint8_t pin);
 int ss_uartBitRate(uint32_t bitrate);
 int ss_uartWrite(uint8_t data);
 int16_t ss_uartRead();
+uint8_t ss_eepromRead(uint8_t address);
+int ss_eepromWrite(uint8_t address, uint32_t data);
+bool ss_ping();
 
 #endif // SEESAW_H

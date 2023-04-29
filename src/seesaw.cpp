@@ -48,7 +48,7 @@ int ss_digitalWrite(uint32_t pin_mask, uint8_t value)
         (uint8_t)(pin_mask >> 24),
         (uint8_t)(pin_mask >> 16),
         (uint8_t)(pin_mask >> 8),
-        (uint8_t)pin_mask,
+        (uint8_t)(pin_mask >> 0),
     };
 
 #if USE_I2C_DMA
@@ -96,7 +96,7 @@ int ss_uartBitRate(uint32_t bitrate)
         (uint8_t)(bitrate >> 24),
         (uint8_t)(bitrate >> 16),
         (uint8_t)(bitrate >> 8),
-        (uint8_t)bitrate,
+        (uint8_t)(bitrate >> 0),
     };
     return i2c_dma_write(i2c0_dma, SEESAW_ADDRESS, cmd, sizeof(cmd));
 }
@@ -120,4 +120,36 @@ int16_t ss_uartRead()
     uint8_t res[2] = {0xff, 0xff};
     i2c_dma_write_read(i2c0_dma, SEESAW_ADDRESS, cmd, sizeof(cmd), res, sizeof(res));
     return (res[0] << 8) + res[1];
+}
+
+uint8_t ss_eepromRead(uint8_t address)
+{
+    uint8_t cmd[] = {
+        SEESAW_EEPROM_BASE,
+        address
+    };
+    uint8_t res[1] = {0xff};
+    i2c_dma_write_read(i2c0_dma, SEESAW_ADDRESS, cmd, sizeof(cmd), res, sizeof(res));
+    return res[0];
+}
+
+int ss_eepromWrite(uint8_t address, uint32_t data)
+{
+    uint8_t cmd[] = {
+        SEESAW_EEPROM_BASE,
+        address,
+        (uint8_t)(data >> 24),
+        (uint8_t)(data >> 16),
+        (uint8_t)(data >> 8),
+        (uint8_t)(data >> 0),
+    };
+    return i2c_dma_write(i2c0_dma, SEESAW_ADDRESS, cmd, sizeof(cmd));
+}
+
+bool ss_ping()
+{
+    uint8_t cmd[] = {
+        SEESAW_STATUS_BASE
+    };
+    return i2c_dma_write(i2c0_dma, SEESAW_ADDRESS, cmd, sizeof(cmd)) == PICO_OK;
 }
