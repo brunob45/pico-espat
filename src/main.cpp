@@ -30,6 +30,8 @@ struct
     {.pins = 0b01, .delay = 5},
 };
 
+uint16_t tooth_angle[] = {0, 700, 1800, 2500, 3600, 4300, 5400, 6100, 7200};
+
 uint16_t make_lumi(uint16_t value)
 {
     const uint32_t squared = (uint32_t)value * value;
@@ -99,11 +101,15 @@ void core1_entry()
     uint32_t last_micros;
     absolute_time_t debounce = get_absolute_time();
     absolute_time_t next_tooth = at_the_end_of_time;
+    absolute_time_t prev_tooth;
     uint8_t current_tooth = 0;
     uint32_t last_cycle = time_us_32();
+    bool tooth_completed;
+    uint32_t current_angle;
+    bool speed_up;
 
-    gpio_init(16);
-    gpio_set_dir(16, true);
+    gpio_init_mask(0b111 << 16);
+    gpio_set_dir_out_masked(0b111 << 16);
 
     for (;;)
     {
@@ -122,10 +128,14 @@ void core1_entry()
         const bool crank_state = gpio_get(decode_pin_base + 1);
         if (crank_last != crank_state)
         {
-            if (time_reached(debounce))
+            if (absolute_time_diff_us(debounce, now) > 0)
             {
                 debounce = delayed_by_us(now, 500);
                 crank_last = crank_state;
+                prev_tooth = now;
+
+                speed_up = !tooth_completed;
+                tooth_completed = false;
 
                 if (++current_tooth >= 8)
                 {
@@ -154,7 +164,36 @@ void core1_entry()
                 sem_release(&sem_decoder);
             }
         }
-        gpio_put(16, time_reached(next_tooth));
+
+        if (!tooth_completed)
+        {
+            if (absolute_time_diff_us(next_tooth, now) >= 0)
+            {
+                tooth_completed = true;
+            }
+            else
+            {
+                const int32_t time_since_last_tooth = absolute_time_diff_us(prev_tooth, now);
+                const uint32_t angle_since_last_tooth = 1800 * time_since_last_tooth / tooth_time;
+                const uint32_t new_angle = tooth_angle[current_tooth] + angle_since_last_tooth;
+                if (speed_up)
+                {
+                    ++current_angle;
+                    speed_up = (current_angle < new_angle);
+                }
+                else
+                {
+                    current_angle = new_angle;
+                }
+
+                if (current_angle == 650)
+                    gpio_put(18, true);
+                else if (current_angle == 650+1800)
+                    gpio_put(18, false);
+            }
+        }
+        gpio_put(16, tooth_completed);
+        gpio_put(17, speed_up);
     }
 }
 
@@ -189,7 +228,7 @@ int main()
     filter_t filter_tol, filter_hyst;
 
     filter_init(&filter_tol, 5);
-    filter_init(&filter_hyst, 5);
+    filter_init(&filter_hyst, 10);
 
     absolute_time_t next_update = make_timeout_time_ms(rate_ms);
     absolute_time_t uart_timeout = get_absolute_time();
@@ -228,7 +267,7 @@ int main()
             const int32_t rpm_hyst = filter_update_hysteresis(&filter_hyst, new_rpm);
             if ((usb_get_bitrate() <= 115200) && time_reached(uart_timeout))
             {
-                printf("%d %d %d %d\n", new_rpm, rpm_tol, rpm_hyst, rev_count);
+                printf("%d %d %d %d\n", rpm_tol, tooth_time/180, core1_cycle_max, rev_count);
             }
         }
 
